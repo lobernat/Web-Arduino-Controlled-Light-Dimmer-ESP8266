@@ -12,6 +12,7 @@ Dimmer light controlled by http get request
   
   Also there is a phisical switch to manage the lamp manually with multifuncion press:
   - very short press -> increase light by 10% 
+  - short press -> increase light to full
   - long press -> power off
   
   There is a autopoweroff function to swith off the lamp 10 minutes after the get request
