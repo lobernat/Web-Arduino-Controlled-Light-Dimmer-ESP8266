@@ -19,7 +19,7 @@ Dimmer light controlled by http get request
   (this is because I use this as an alarm clock and I lauch the get request at 6:40h from a cron script on my raspberrypi. I don't have to worry to swith it off at early morning :)  )
   
   
-  Wifi connection: There is the wifimanager arduino library. If there is no known wifi network the ESP8266 boots as an wifi AP. You can connect tho this ap and browse http://192.168.4.1 and you'll see a wifi configurator to connect as a client to your home wifi.
+  Wifi connection: There is the wifimanager arduino library. If there is no known wifi network the ESP8266 boots as an wifi AP. You can connect to this ap and browse http://192.168.4.1 and you'll see a wifi configurator to connect as a client to your home wifi.
   
 
 Hardware (very cheap at aliexpress):
