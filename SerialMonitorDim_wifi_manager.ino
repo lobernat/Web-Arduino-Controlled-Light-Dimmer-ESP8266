@@ -1,4 +1,3 @@
-
 /**************
 
 
@@ -12,19 +11,30 @@
     +---------------+-------------------------+-------------------------+
   Polsador ->D6 (arduino->12) o D7 (arduino->13)
   http://192.168.10.213/?temps=5&percent=99
-*/
 
+  No funciona amb les llibreries ESP8266 noves
+  funciona ok amb la 2.4.2
+  
+  Polsació molt llarga, puja la persiana amb un GET
+  
+*/
+#include <ESP8266HTTPClient.h>
+#include <WiFiClient.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <Ticker.h>
 #include <RBDdimmer.h>
-#include <WiFiManager.h>
 #include <DNSServer.h>
 #define USE_SERIAL Serial
 #define outputPin  5 // wemos D1
 #define zerocross  4 // Wemos D2 for boards with CHANGEBLE input pins
 const int PinPolsador = 12; //Wemos D6
 const int PercentInicial = 0; //entre 0 i 8 la bombeta no sencen gens... per a que comensi per 8
+
+int dobleclick = 0;
+unsigned long iniciMillis = 0;
+int duradaApretat = 0;
+int parasit = 0;
 
 dimmerLamp dimmer(outputPin, zerocross); //initialase port for dimmer for ESP8266, ESP32, Arduino due boards
 ESP8266WebServer server(80);
@@ -40,11 +50,21 @@ void setup() {
 
 
 
-//Config Wifi Manager
-    WiFiManager wifiManager;
-    //first parameter is name of access point, second is the password
-    wifiManager.autoConnect("lampara");
-    wifiManager.setConfigPortalTimeout(180);
+  //Config Wifi
+  WiFi.hostname("Lampara");
+  WiFi.mode(WIFI_STA);
+  WiFi.begin("honeypot", "internetdelescoses");
+
+  Serial.print("Connecting");
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println();
+
+  Serial.print("Connected, IP address: ");
+  Serial.println(WiFi.localIP());
   //fi config wifi
 
 
@@ -74,6 +94,7 @@ void loop() {
     BotoApretat();
   }
 
+
 }
 
 
@@ -94,7 +115,7 @@ void handle_index() {
     PaginaWeb += F(" Percent:");
     PaginaWeb += percent;
     server.send(200, "text/plain", PaginaWeb);
-    
+
     EncendreDimmer();
     IncrementarLlum(percent, temps);
     AutoApagat();
@@ -108,9 +129,9 @@ void handle_index() {
 
   } else {
     String PaginaWeb;
-    PaginaWeb += F("Temps o percent = null \nhttp://192.168.10.3/?temps=5&percent=99\n\nGet Percent Dimmer\nhttp://192.168.10.3/?estat=1");
+    PaginaWeb += F("<html>Temps o percent = null <br> <a href=\"http://192.168.10.3/?temps=5&percent=99\">http://192.168.10.3/?temps=5&percent=99  </a>\n\n<br><p> Get Percent Dimmer\nhttp://192.168.10.3/?estat=1");
     USE_SERIAL.println("Temps o percent = null");
-    server.send(200, "text/plain", PaginaWeb);
+    server.send(200, "text/html", PaginaWeb);
     ApagarDimmer();
   }
 
@@ -120,34 +141,64 @@ void handle_index() {
 
 
 void BotoApretat() {
-  //detectar botó apretat
-  int held = 0;
-  while (digitalRead(PinPolsador) == HIGH && held < 9)
+
+  //mirar si s'ha fet dobleclick
+  if ( (millis() - iniciMillis < 400) && (millis() - iniciMillis > 20)&& parasit == 0) {
+    dobleclick = 1;
+  } else {
+    dobleclick = 0;
+  }
+  
+  
+  iniciMillis = millis();
+  while (digitalRead(PinPolsador) == HIGH)
   {
-    delay(50);
-    held++;
-    Serial.println(held);
+    delay(1);
   }
-  if ((held >= 3) and (held < 5)) {
-    Serial.println(" - - - - - ");
-    IncrementarDimmer();
-  }
-  else if ((held >= 5) and (held < 9)) {
-    Serial.println(" atope");
+  duradaApretat = millis() - iniciMillis;
+  
+  //Serial.println(duradaApretat);
+
+  if (duradaApretat < 20 ) {
+       parasit = 1;
+        delay(5);
+    return;
+  }else{
+    parasit = 0;
+    }
+
+  //mirar dobleclick i encendre a tope
+  if (dobleclick == 1 && duradaApretat > 30 && duradaApretat < 500) {
+    Serial.println("Doble click");
     EncendreDimmer();
     IncrementarLlum(99, 5);
-    //delay(600);
+    dobleclick = 0;
+    return;
   }
-    else if (held == 9) {
-    Serial.println(" + + + + + més de mig segon");
+
+  //click sol encendre un punt
+  if (dobleclick == 0 && duradaApretat > 30 && duradaApretat < 500) {
+    Serial.println("Click");
+    IncrementarDimmer();
+    return;
+  }
+
+  //apretat llarg -- apagar llum
+  if (dobleclick == 0 && duradaApretat > 500 && duradaApretat < 4000 ) {
+    Serial.println("Llarg");
     ApagarDimmer();
-    //delay(600);
+    return;
   }
-  //Fi detectar boto
+
+
+  //apretat moltllarg -- pujar persiana
+  if (dobleclick == 0 && duradaApretat > 4000 ) {
+    Serial.println("molt Llarg");
+    PujarPersiana();
+    return;
+  }
 
 }
-
-
 
 
 
@@ -163,10 +214,11 @@ void IncrementarLlum(int percent, int temps) {
     USE_SERIAL.print("Percent: -> ");
     USE_SERIAL.println(i);
 
-      if (digitalRead(PinPolsador) == HIGH) {         // cancelar obrir llum
-        break;
-      }
-    
+    if (digitalRead(PinPolsador) == HIGH) {         // cancelar obrir llum
+      delay(20);
+      break;
+    }
+
   }
 }
 
@@ -197,14 +249,14 @@ void IncrementarDimmer() {
   USE_SERIAL.println("Potencia Actual: -> ");
   Serial.print(dimmer.getPower());
   int PotenciaActual = dimmer.getPower();
-  if (PotenciaActual < 2){
-      PotenciaActual=PercentInicial;
-    }
+  if (PotenciaActual < 2) {
+    PotenciaActual = PercentInicial;
+  }
 
-   int Increment = PotenciaActual+3;
-  if (PotenciaActual > 2){
-      Increment = Increment + 7;
-    }
+  int Increment = PotenciaActual + 2;
+  if (PotenciaActual > 1) {
+    Increment = Increment + 7;
+  }
 
   for (int i = PotenciaActual; i <= Increment; i++)
   {
@@ -212,6 +264,11 @@ void IncrementarDimmer() {
     delay(30);
     USE_SERIAL.print("Percent: -> ");
     USE_SERIAL.println(i);
+
+    //per millorar el dobleclick
+  //  if (digitalRead(PinPolsador) == HIGH) {
+    //  BotoApretat();
+   // }
   }
 
 
@@ -219,49 +276,26 @@ void IncrementarDimmer() {
 
 
 void AutoApagat() {
-   timer1.attach(1200, ApagarDimmer); //600 segons -> 10 minuts
+  timer1.attach(1200, ApagarDimmer); //600 segons -> 10 minuts
 }
 
 
-/*
-  Funciona OK:
+void PujarPersiana() {
+  if (WiFi.status() == WL_CONNECTED) { //Check WiFi connection status
 
-  #include <RBDdimmer.h>//
+    HTTPClient http;  //Declare an object of class HTTPClient
 
-  #define outputPin  5 // wemos D1
-  #define zerocross  4 // Wemos D2 for boards with CHANGEBLE input pins
+    http.begin("http://192.168.10.2/?temps=25&dormitori=1&accio=1");  //Specify request destination
+    int httpCode = http.GET();                                  //Send the request
 
-  dimmerLamp dimmer(outputPin, zerocross); //initialase port for dimmer for ESP8266, ESP32, Arduino due boards
+    if (httpCode > 0) { //Check the returning code
 
+      String payload = http.getString();   //Get the request response payload
+      //Serial.println(payload);             //Print the response payload
 
-  void setup() {
-  dimmer.begin(NORMAL_MODE, ON); //dimmer initialisation: name.begin(MODE, STATE)
-  }
+    }
 
-
-
-  void loop() {
-
-  int percent=99;
-  float temps=60;
-  EncendreLlum(percent,temps); //EncendreLlum(99,10)
+    http.end();   //Close connection
 
   }
-
-
-
-  void EncendreLlum(int percent, int temps){
-  dimmer.setPower(percent);
-  float retard=(temps*1000)/percent;
-
-  for (int i = 0; i<=percent; i++)
-      {
-        dimmer.setPower(i);
-        delay(retard);
-      }
-
-
-  }
-
-
-*/
+}
